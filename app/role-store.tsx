@@ -2,20 +2,23 @@
 
 import React from "react";
 
-export type Role = "SERVER" | "KITCHEN";
+type Role = "SERVER" | "KITCHEN";
 
-type RoleStore = {
+type RoleCtx = {
   role: Role;
   setRole: (r: Role) => void;
+  kitchenAuthed: boolean;
+  setKitchenAuthed: (v: boolean) => void;
 };
 
-const RoleContext = React.createContext<RoleStore | null>(null);
+const RoleContext = React.createContext<RoleCtx | null>(null);
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = React.useState<Role>("SERVER");
+  const [kitchenAuthed, setKitchenAuthed] = React.useState(false);
 
   return (
-    <RoleContext.Provider value={{ role, setRole }}>
+    <RoleContext.Provider value={{ role, setRole, kitchenAuthed, setKitchenAuthed }}>
       {children}
     </RoleContext.Provider>
   );

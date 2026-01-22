@@ -6,7 +6,6 @@ import { useAppState, defaultSetup } from "../app-state";
 export default function ReservationsPage() {
   const { reservations, tables, setReservations, setTables } = useAppState();
 
-  // tap-to-assign flow
   const [selectedReservationId, setSelectedReservationId] = React.useState<string | null>(null);
 
   const selectedReservation = React.useMemo(
@@ -67,20 +66,14 @@ export default function ReservationsPage() {
   };
 
   const onClickTable = (tableId: number) => {
-    const t = tables.find((x) => x.id === tableId);
-    if (!t) return;
-
-    // if a reservation is selected -> assign
-    if (selectedReservationId) {
-      assignReservationToTable(selectedReservationId, tableId);
-      return;
-    }
+    if (!selectedReservationId) return;
+    assignReservationToTable(selectedReservationId, tableId);
   };
 
   return (
-    <div className="h-full w-full bg-[#111] flex">
+    <div className="h-full w-full bg-[#0b0b0d] grid grid-cols-[380px_1fr]">
       {/* LEFT: RESERVATIONS */}
-      <aside className="w-96 border-r border-zinc-800 bg-zinc-950 p-4 overflow-y-auto">
+      <aside className="border-r border-zinc-800 bg-zinc-950 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold tracking-wide text-zinc-200">RESERVATIONS</h2>
           <span className="text-xs text-zinc-500">{reservations.length}</span>
@@ -99,14 +92,12 @@ export default function ReservationsPage() {
                 draggable
                 onDragStart={(e) => onDragStartReservation(e, r.id)}
                 onClick={() => setSelectedReservationId(selected ? null : r.id)}
-                className={`
-                  cursor-pointer select-none rounded-lg border p-3
-                  ${
-                    selected
-                      ? "border-blue-500 bg-blue-900/20"
-                      : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
-                  }
-                `}
+                className={[
+                  "cursor-pointer select-none rounded-xl border p-3 transition",
+                  selected
+                    ? "border-blue-500 bg-blue-900/20"
+                    : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70",
+                ].join(" ")}
               >
                 <div className="flex items-start justify-between">
                   <div>
@@ -115,6 +106,7 @@ export default function ReservationsPage() {
                       {r.time} • {r.pax} pax
                     </div>
                   </div>
+
                   <span className="text-[10px] px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-200 font-bold">
                     {r.language}
                   </span>
@@ -128,7 +120,7 @@ export default function ReservationsPage() {
           })}
 
           {reservations.length === 0 && (
-            <div className="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-lg p-4">
+            <div className="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-xl p-4">
               No unassigned reservations.
             </div>
           )}
@@ -142,13 +134,14 @@ export default function ReservationsPage() {
         </div>
       </aside>
 
-      {/* RIGHT: MAP */}
-      <main className="flex-1 overflow-hidden bg-[#0f0f12]">
-        <div className="h-full w-full p-8">
-          <div className="mb-4 flex gap-2 items-center">
+      {/* RIGHT: MAP (Grid view for now) */}
+      <main className="overflow-hidden bg-[#0f0f12]">
+        <div className="h-full w-full p-6 overflow-y-auto">
+          <div className="mb-4 flex items-center gap-2">
             <div className="px-3 py-2 rounded-lg border border-zinc-800 bg-black/60 text-xs text-zinc-300">
               Mode: <span className="font-bold text-white">Seating</span>
             </div>
+
             {selectedReservation && (
               <div className="px-3 py-2 rounded-lg border border-blue-700 bg-blue-900/30 text-xs text-blue-100">
                 Assign: <span className="font-bold">{selectedReservation.name}</span>
@@ -166,13 +159,14 @@ export default function ReservationsPage() {
                   onDragOver={onDragOverTable}
                   onDrop={(e) => onDropOnTable(e, table.id)}
                   className={[
-                    "rounded-2xl border-2 p-4 transition select-none min-h-[150px]",
+                    "rounded-2xl border-2 p-4 transition select-none min-h-[160px]",
                     seated ? "bg-green-900/30 border-green-600" : "bg-zinc-900/60 border-zinc-700",
                     selectedReservationId ? "cursor-pointer hover:scale-[1.01]" : "cursor-default",
                   ].join(" ")}
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-black text-white">{table.name}</span>
+
                     {seated && table.language && (
                       <span className="text-[10px] px-2 py-0.5 rounded border border-blue-700 bg-blue-900 text-blue-100 font-bold">
                         {table.language}

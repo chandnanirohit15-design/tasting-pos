@@ -8,21 +8,16 @@ export const metadata = {
   description: "Service, Kitchen, Pacing",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        suppressHydrationWarning
-        className="bg-black text-white h-screen overflow-hidden"
-      >
+      <body suppressHydrationWarning className="bg-black text-white h-screen overflow-hidden">
         <RoleProvider>
           <AppStateProvider>
-            <HeaderBar />
-            <main className="h-[calc(100vh-56px)] w-full">{children}</main>
+            <div className="h-screen w-screen flex flex-col">
+              <HeaderBar />
+              <main className="flex-1 overflow-auto">{children}</main>
+            </div>
           </AppStateProvider>
         </RoleProvider>
       </body>
