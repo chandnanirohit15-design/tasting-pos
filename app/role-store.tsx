@@ -2,7 +2,7 @@
 
 import React from "react";
 
-type Role = "SERVER" | "KITCHEN";
+export type Role = "ROOM" | "KITCHEN";
 
 type RoleCtx = {
   role: Role;
@@ -14,7 +14,7 @@ type RoleCtx = {
 const RoleContext = React.createContext<RoleCtx | null>(null);
 
 export function RoleProvider({ children }: { children: React.ReactNode }) {
-  const [role, setRole] = React.useState<Role>("SERVER");
+  const [role, setRole] = React.useState<Role>("ROOM");
   const [kitchenAuthed, setKitchenAuthed] = React.useState(false);
 
   return (

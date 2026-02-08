@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useRole } from "./role-store";
+import { useI18n } from "./i18n";
 
 type TableStatus = "EMPTY" | "SEATED";
 type ApprovalStatus = "NONE" | "PENDING" | "APPROVED";
@@ -163,6 +164,7 @@ function normalizeTables(prev: Table[]): Table[] {
 
 export default function Page() {
   const { role } = useRole();
+  const { t: tr } = useI18n();
 
   const [reservations, setReservations] = React.useState<Reservation[]>(initialReservations);
 
@@ -392,7 +394,7 @@ export default function Page() {
             )}
           </div>
         ))}
-        {lines.length > 3 && <div className="text-zinc-500">+ more…</div>}
+        {lines.length > 3 && <div className="text-zinc-500">{tr("+ more…", "+ more…")}</div>}
       </div>
     );
   };
@@ -407,13 +409,13 @@ export default function Page() {
       <div className="h-full w-full bg-zinc-950 flex">
         <aside className="w-96 border-r border-zinc-800 bg-black p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold tracking-wide text-zinc-200">PENDING APPROVAL</h2>
+            <h2 className="text-sm font-bold tracking-wide text-zinc-200">{tr("PENDING APPROVAL", "PENDING APPROVAL")}</h2>
             <span className="text-xs text-zinc-500">{pendingTables.length}</span>
           </div>
 
           {pendingTables.length === 0 ? (
             <div className="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-lg p-4">
-              No tables waiting for approval.
+              {tr("No tables waiting for approval.", "No tables waiting for approval.")}
             </div>
           ) : (
             <div className="space-y-2">
@@ -427,28 +429,28 @@ export default function Page() {
                     <div>
                       <div className="text-white font-black text-lg">{t.name}</div>
                       <div className="text-xs text-zinc-400 mt-0.5">
-                        {t.reservationName} • {t.pax} pax • {t.language}
+                        {t.reservationName} • {t.pax} {tr("pax", "pax")} • {t.language}
                       </div>
                     </div>
                     <div className="text-[10px] font-bold px-2 py-1 rounded border border-amber-600 bg-amber-900/30 text-amber-200">
-                      PENDING
+                      {tr("PENDING", "PENDING")}
                     </div>
                   </div>
 
                   <div className="mt-2 flex gap-2 items-center text-[10px] text-zinc-300">
                     <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900">
-                      MENU {t.setup?.menu ?? "A"}
+                      {tr("MENU", "MENU")} {t.setup?.menu ?? "A"}
                     </span>
                     {t.setup?.pairing && (
                       <span className="px-2 py-0.5 rounded border border-purple-600 bg-purple-900/30 text-purple-200 font-bold">
-                        SLOW PACE
+                        {tr("SLOW PACE", "SLOW PACE")}
                       </span>
                     )}
                     <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-400">
                       {(Array.isArray((t.setup as any)?.courseLines)
                         ? (t.setup as any).courseLines.length
                         : buildCourseLines(t.setup?.menu ?? "A").length)}{" "}
-                      courses
+                      {tr("courses", "courses")}
                     </span>
                   </div>
                 </button>
@@ -458,8 +460,10 @@ export default function Page() {
         </aside>
 
         <main className="flex-1 p-6 overflow-y-auto">
-          <div className="text-2xl font-black text-white">Kitchen Board</div>
-          <div className="text-zinc-400 mt-1">Tap a pending table → edit substitutions/reorder → approve.</div>
+          <div className="text-2xl font-black text-white">{tr("Kitchen Board", "Kitchen Board")}</div>
+          <div className="text-zinc-400 mt-1">
+            {tr("Tap a pending table → edit substitutions/reorder → approve.", "Tap a pending table → edit substitutions/reorder → approve.")}
+          </div>
         </main>
 
         {/* KITCHEN MODAL */}
@@ -468,14 +472,14 @@ export default function Page() {
             <div className="w-full max-w-5xl bg-zinc-950 border border-zinc-700 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900">
                 <div>
-                  <div className="text-lg font-black">{kitchenActiveTable.name} — Edit & Approve</div>
+                  <div className="text-lg font-black">{kitchenActiveTable.name} — {tr("Edit & Approve", "Edit & Approve")}</div>
                   <div className="text-xs text-zinc-400">
-                    {kitchenActiveTable.reservationName} • {kitchenActiveTable.pax} pax • Language:{" "}
+                    {kitchenActiveTable.reservationName} • {kitchenActiveTable.pax} {tr("pax", "pax")} • {tr("Language", "Language")}:{" "}
                     {kitchenActiveTable.language}
                   </div>
                 </div>
                 <button onClick={() => setKitchenActiveTableId(null)} className="text-zinc-400 hover:text-white text-sm font-bold">
-                  CLOSE
+                  {tr("CLOSE", "CLOSE")}
                 </button>
               </div>
 
@@ -491,27 +495,27 @@ export default function Page() {
                       <div className="col-span-4 space-y-4">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-3 py-1 rounded border border-zinc-700 bg-zinc-900 text-sm font-bold text-zinc-200">
-                            MENU {kitchenActiveTable.setup!.menu}
+                            {tr("MENU", "MENU")} {kitchenActiveTable.setup!.menu}
                           </span>
                           {kitchenActiveTable.setup!.pairing && (
                             <span className="px-3 py-1 rounded border border-purple-600 bg-purple-900/30 text-sm font-bold text-purple-200">
-                              SLOW PACE
+                              {tr("SLOW PACE", "SLOW PACE")}
                             </span>
                           )}
                           <span className="px-3 py-1 rounded border border-amber-600 bg-amber-900/30 text-sm font-bold text-amber-200">
-                            PENDING
+                            {tr("PENDING", "PENDING")}
                           </span>
                         </div>
 
                         <div className="rounded-xl border border-zinc-800 bg-black p-4">
-                          <div className="text-sm font-bold mb-2 text-red-300">ALLERGIES BY SEAT</div>
+                          <div className="text-sm font-bold mb-2 text-red-300">{tr("ALLERGIES BY SEAT", "ALLERGIES BY SEAT")}</div>
                           <div className="space-y-2">
                             {Array.from({ length: kitchenActiveTable.pax }).map((_, idx) => {
                               const seat = idx + 1;
                               const val = kitchenActiveTable.setup?.allergiesBySeat?.[seat] ?? "";
                               return (
                                 <div key={seat} className="flex items-start justify-between gap-3">
-                                  <div className="text-xs font-bold text-zinc-400 w-16">Seat {seat}</div>
+                                  <div className="text-xs font-bold text-zinc-400 w-16">{tr("Seat", "Seat")} {seat}</div>
                                   <div className={`text-xs flex-1 ${val ? "text-white" : "text-zinc-600"}`}>{val || "—"}</div>
                                 </div>
                               );
@@ -521,7 +525,9 @@ export default function Page() {
                       </div>
 
                       <div className="col-span-8">
-                        <div className="text-sm font-bold text-zinc-200 mb-2">Courses — substitutions per seat + reorder</div>
+                        <div className="text-sm font-bold text-zinc-200 mb-2">
+                          {tr("Courses — substitutions per seat + reorder", "Courses — substitutions per seat + reorder")}
+                        </div>
 
                         <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
                           {lines.map((line, idx) => (
@@ -532,13 +538,13 @@ export default function Page() {
                                   <div className="text-white font-bold">{line.baseDish}</div>
 
                                   {line.subsBySeat.length > 0 && (
-                                    <div className="mt-2 text-xs text-amber-200 space-y-1">
-                                      {line.subsBySeat.map((s) => (
-                                        <div key={`${line.courseId}-${s.seat}`}>
-                                          Seat {s.seat} → <span className="font-bold">{s.dish}</span>
-                                        </div>
-                                      ))}
-                                    </div>
+                                      <div className="mt-2 text-xs text-amber-200 space-y-1">
+                                        {line.subsBySeat.map((s) => (
+                                          <div key={`${line.courseId}-${s.seat}`}>
+                                          {tr("Seat", "Seat")} {s.seat} → <span className="font-bold">{s.dish}</span>
+                                          </div>
+                                        ))}
+                                      </div>
                                   )}
                                 </div>
 
@@ -561,7 +567,7 @@ export default function Page() {
                               </div>
 
                               <div className="mt-3 border-t border-zinc-800 pt-3">
-                                <div className="text-xs font-bold text-zinc-300 mb-2">Substitute by seat</div>
+                                <div className="text-xs font-bold text-zinc-300 mb-2">{tr("Substitute by seat", "Substitute by seat")}</div>
 
                                 <div className="grid grid-cols-2 gap-2">
                                   {Array.from({ length: kitchenActiveTable.pax }).map((_, sIdx) => {
@@ -570,7 +576,7 @@ export default function Page() {
 
                                     return (
                                       <div key={seat} className="flex items-center gap-2">
-                                        <div className="text-[10px] w-14 text-zinc-400 font-bold">Seat {seat}</div>
+                                        <div className="text-[10px] w-14 text-zinc-400 font-bold">{tr("Seat", "Seat")} {seat}</div>
                                         <select
                                           value={currentSub}
                                           onChange={(e) =>
@@ -580,7 +586,7 @@ export default function Page() {
                                         >
                                           {SUB_DISHES.map((d) => (
                                             <option key={d || "none"} value={d}>
-                                              {d || "— no substitute —"}
+                                          {d || tr("— no substitute —", "— no substitute —")}
                                             </option>
                                           ))}
                                         </select>
@@ -590,7 +596,7 @@ export default function Page() {
                                 </div>
 
                                 <div className="text-[10px] text-zinc-500 mt-2">
-                                  Pick substitutes only for the seats that need it.
+                                  {tr("Pick substitutes only for the seats that need it.", "Pick substitutes only for the seats that need it.")}
                                 </div>
                               </div>
                             </div>
@@ -600,12 +606,14 @@ export default function Page() {
                     </div>
 
                     <div className="flex justify-between items-center px-5 py-4 border-t border-zinc-800 bg-zinc-900">
-                      <div className="text-xs text-zinc-500">Approving locks current order + substitutions for service.</div>
+                      <div className="text-xs text-zinc-500">
+                        {tr("Approving locks current order + substitutions for service.", "Approving locks current order + substitutions for service.")}
+                      </div>
                       <button
                         onClick={() => approveTable(kitchenActiveTable.id)}
                         className="px-5 py-3 rounded font-black bg-green-600 hover:bg-green-500 text-black"
                       >
-                        APPROVE TABLE
+                        {tr("APPROVE TABLE", "APPROVE TABLE")}
                       </button>
                     </div>
                   </>
@@ -623,11 +631,13 @@ export default function Page() {
     <div className="h-full w-full bg-[#111] flex">
       <aside className="w-80 border-r border-zinc-800 bg-zinc-950 p-4 overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold tracking-wide text-zinc-200">RESERVATIONS</h2>
+          <h2 className="text-sm font-bold tracking-wide text-zinc-200">{tr("RESERVATIONS", "RESERVATIONS")}</h2>
           <span className="text-xs text-zinc-500">{reservations.length}</span>
         </div>
 
-        <div className="text-xs text-zinc-500 mb-3">Tap a reservation then tap a table, or drag it onto a table.</div>
+        <div className="text-xs text-zinc-500 mb-3">
+          {tr("Tap a reservation then tap a table, or drag it onto a table.", "Tap a reservation then tap a table, or drag it onto a table.")}
+        </div>
 
         <div className="space-y-2">
           {reservations.map((r) => {
@@ -647,7 +657,7 @@ export default function Page() {
                   <div>
                     <div className="text-sm font-bold text-white">{r.name}</div>
                     <div className="text-xs text-zinc-400 mt-0.5">
-                      {r.time} • {r.pax} pax
+                      {r.time} • {r.pax} {tr("pax", "pax")}
                     </div>
                   </div>
                   <span className="text-[10px] px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-200 font-bold">
@@ -655,22 +665,24 @@ export default function Page() {
                   </span>
                 </div>
                 {r.notes && <div className="text-xs text-zinc-400 mt-2 line-clamp-2">{r.notes}</div>}
-                <div className="text-[10px] text-zinc-600 mt-2">Drag to table • Tap to select</div>
+                <div className="text-[10px] text-zinc-600 mt-2">
+                  {tr("Drag to table • Tap to select", "Drag to table • Tap to select")}
+                </div>
               </div>
             );
           })}
 
           {reservations.length === 0 && (
             <div className="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-lg p-4">
-              No unassigned reservations.
+              {tr("No unassigned reservations.", "No unassigned reservations.")}
             </div>
           )}
         </div>
 
         <div className="mt-4 border-t border-zinc-800 pt-3">
-          <div className="text-xs text-zinc-500">Selected</div>
+          <div className="text-xs text-zinc-500">{tr("Selected", "Selected")}</div>
           <div className="text-sm text-white font-bold">
-            {selectedReservation ? `${selectedReservation.name} (${selectedReservation.pax})` : "None"}
+            {selectedReservation ? `${selectedReservation.name} (${selectedReservation.pax})` : tr("None", "None")}
           </div>
         </div>
       </aside>
@@ -678,7 +690,7 @@ export default function Page() {
       <main className="flex-1 relative overflow-hidden">
         {selectedReservation && (
           <div className="absolute top-4 left-4 z-10 bg-blue-900/30 border border-blue-700 text-blue-100 text-xs px-3 py-2 rounded-lg">
-            Tap a table to assign: <span className="font-bold">{selectedReservation.name}</span>
+            {tr("Tap a table to assign", "Tap a table to assign")}: <span className="font-bold">{selectedReservation.name}</span>
           </div>
         )}
 
@@ -696,7 +708,7 @@ export default function Page() {
                 ${(selectedReservation || table.status === "SEATED") ? "cursor-pointer hover:scale-[1.02]" : "cursor-default"}
               `}
               style={{ left: table.x, top: table.y, width: 220, height: 190 }}
-              title={table.status === "SEATED" ? "Tap to open setup" : "Drop reservation here"}
+              title={table.status === "SEATED" ? tr("Tap to open setup", "Tap to open setup") : tr("Drop reservation here", "Drop reservation here")}
             >
               <div className="flex justify-between items-center">
                 <span className="font-bold text-white">{table.name}</span>
@@ -712,7 +724,7 @@ export default function Page() {
                   <div className="mt-1 text-xs text-zinc-300">
                     <span className="font-bold">{table.reservationName}</span>
                   </div>
-                  <div className="text-xs text-zinc-400 mt-0.5">{table.pax} pax</div>
+                  <div className="text-xs text-zinc-400 mt-0.5">{table.pax} {tr("pax", "pax")}</div>
 
                   <div className="grid grid-cols-3 gap-1 mt-2">
                     {Array.from({ length: table.pax }).map((_, idx) => (
@@ -730,25 +742,25 @@ export default function Page() {
                   <div className="mt-2 text-[10px]">
                     {approval === "NONE" && (
                       <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900 text-zinc-300">
-                        NOT SENT
+                        {tr("NOT SENT", "NOT SENT")}
                       </span>
                     )}
                     {approval === "PENDING" && (
                       <span className="px-2 py-0.5 rounded border border-amber-600 bg-amber-900/30 text-amber-200 font-bold">
-                        PENDING APPROVAL
+                        {tr("PENDING APPROVAL", "PENDING APPROVAL")}
                       </span>
                     )}
                     {approval === "APPROVED" && (
                       <span className="px-2 py-0.5 rounded border border-green-600 bg-green-900/30 text-green-200 font-bold">
-                        APPROVED
+                        {tr("APPROVED", "APPROVED")}
                       </span>
                     )}
                   </div>
                 </>
               ) : (
                 <div className="text-sm text-zinc-500 mt-10 text-center">
-                  EMPTY
-                  <div className="text-[10px] text-zinc-600 mt-1">Drop reservation</div>
+                  {tr("EMPTY", "EMPTY")}
+                  <div className="text-[10px] text-zinc-600 mt-1">{tr("Drop reservation", "Drop reservation")}</div>
                 </div>
               )}
 
@@ -762,19 +774,19 @@ export default function Page() {
             <div className="w-full max-w-2xl bg-zinc-950 border border-zinc-700 rounded-xl overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900">
                 <div>
-                  <div className="text-lg font-black">{activeTable.name} — Table Setup</div>
+                  <div className="text-lg font-black">{activeTable.name} — {tr("Table Setup", "Table Setup")}</div>
                   <div className="text-xs text-zinc-400">
-                    {activeTable.reservationName} • {activeTable.pax} pax • Language: {activeTable.language}
+                    {activeTable.reservationName} • {activeTable.pax} {tr("pax", "pax")} • {tr("Language", "Language")}: {activeTable.language}
                   </div>
                 </div>
                 <button onClick={() => setActiveTableId(null)} className="text-zinc-400 hover:text-white text-sm font-bold">
-                  CLOSE
+                  {tr("CLOSE", "CLOSE")}
                 </button>
               </div>
 
               <div className="p-5 space-y-5">
                 <div>
-                  <div className="text-sm font-bold mb-2">MENU</div>
+                  <div className="text-sm font-bold mb-2">{tr("MENU", "MENU")}</div>
                   <div className="flex gap-2">
                     {(["A", "B"] as MenuType[]).map((m) => (
                       <button
@@ -786,7 +798,7 @@ export default function Page() {
                             : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:bg-zinc-800"
                         }`}
                       >
-                        MENU {m}
+                        {tr("MENU", "MENU")} {m}
                       </button>
                     ))}
                   </div>
@@ -794,8 +806,10 @@ export default function Page() {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold">MARIDAJE</div>
-                    <div className="text-xs text-zinc-400">Kitchen sees pacing indicator, not wines.</div>
+                    <div className="text-sm font-bold">{tr("MARIDAJE", "MARIDAJE")}</div>
+                    <div className="text-xs text-zinc-400">
+                      {tr("Kitchen sees pacing indicator, not wines.", "Kitchen sees pacing indicator, not wines.")}
+                    </div>
                   </div>
                   <button
                     onClick={() => updateTableSetup(activeTable.id, { pairing: !activeTable.setup!.pairing })}
@@ -805,22 +819,22 @@ export default function Page() {
                         : "bg-zinc-900 border-zinc-700 text-zinc-300"
                     }`}
                   >
-                    {activeTable.setup!.pairing ? "PAIRING ON" : "NO PAIRING"}
+                    {activeTable.setup!.pairing ? tr("PAIRING ON", "PAIRING ON") : tr("NO PAIRING", "NO PAIRING")}
                   </button>
                 </div>
 
                 <div>
-                  <div className="text-sm font-bold mb-2 text-red-300">ALLERGIES BY SEAT</div>
+                  <div className="text-sm font-bold mb-2 text-red-300">{tr("ALLERGIES BY SEAT", "ALLERGIES BY SEAT")}</div>
                   <div className="grid grid-cols-2 gap-3">
                     {Array.from({ length: activeTable.pax }).map((_, idx) => {
                       const seat = idx + 1;
                       return (
                         <div key={seat} className="space-y-1">
-                          <div className="text-xs text-zinc-400 font-bold">Seat {seat}</div>
+                          <div className="text-xs text-zinc-400 font-bold">{tr("Seat", "Seat")} {seat}</div>
                           <input
                             value={activeTable.setup!.allergiesBySeat[seat] ?? ""}
                             onChange={(e) => updateAllergySeat(activeTable.id, seat, e.target.value)}
-                            placeholder="e.g. No shellfish, no dairy…"
+                            placeholder={tr("e.g. No shellfish, no dairy…", "e.g. No shellfish, no dairy…")}
                             className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                           />
                         </div>
@@ -831,12 +845,14 @@ export default function Page() {
               </div>
 
               <div className="flex justify-between items-center px-5 py-4 border-t border-zinc-800 bg-zinc-900">
-                <div className="text-xs text-zinc-500">After sending, kitchen can edit substitutions + reorder before approving.</div>
+                <div className="text-xs text-zinc-500">
+                  {tr("After sending, kitchen can edit substitutions + reorder before approving.", "After sending, kitchen can edit substitutions + reorder before approving.")}
+                </div>
                 <button
                   onClick={() => sendToKitchenForApproval(activeTable.id)}
                   className="px-5 py-3 rounded font-black bg-green-600 hover:bg-green-500 text-black"
                 >
-                  SEND TO KITCHEN
+                  {tr("SEND TO KITCHEN", "SEND TO KITCHEN")}
                 </button>
               </div>
             </div>

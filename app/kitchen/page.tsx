@@ -3,81 +3,13 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { useRole } from "../role-store";
-import { useAppState, type Table, type CourseLine } from "../app-state";
+import { useAppState, type Table, type CourseLine, type Reservation } from "../app-state";
+import { getMenuById, loadSettings } from "../settings/settings-store";
+import { KdsTicket, hasAnySeatNote, tableNumber, oldestFiredAt } from "../../components/kds-ticket";
+import { TicketEditor } from "../../components/ticket-editor";
+import { useI18n } from "../i18n";
 
-type Tab = "APPROVAL" | "KDS";
-
-function tableNumber(name: string) {
-  const n = parseInt(name.replace(/[^\d]/g, ""), 10);
-  return Number.isFinite(n) ? n : 9999;
-}
-
-function hasAnySeatNote(allergiesBySeat?: Record<number, string>) {
-  if (!allergiesBySeat) return false;
-  return Object.values(allergiesBySeat).some((v) => (v || "").trim().length > 0);
-}
-
-function seatNotesList(allergiesBySeat?: Record<number, string>) {
-  return Object.entries(allergiesBySeat || {})
-    .map(([k, v]) => ({ seat: Number(k), text: (v || "").trim() }))
-    .filter((x) => x.text.length > 0)
-    .sort((a, b) => a.seat - b.seat);
-}
-
-function totalRefires(setup?: { courseLines?: Array<{ refireCount?: number }> }) {
-  const lines = setup?.courseLines ?? [];
-  return lines.reduce((sum, c) => sum + (c.refireCount ?? 0), 0);
-}
-
-function firedCount(setup?: { courseLines?: Array<{ status?: string }> }) {
-  const lines = setup?.courseLines ?? [];
-  return lines.filter((c) => c.status === "FIRED").length;
-}
-
-function doneCount(setup?: { courseLines?: Array<{ status?: string }> }) {
-  const lines = setup?.courseLines ?? [];
-  return lines.filter((c) => c.status === "DONE").length;
-}
-
-function totalCourses(setup?: { courseLines?: Array<{ status?: string }> }) {
-  return (setup?.courseLines ?? []).length;
-}
-
-function onCourseIdx(setup?: { courseLines?: Array<{ idx?: number; status?: string }> }) {
-  const lines = setup?.courseLines ?? [];
-  if (lines.length === 0) return null;
-
-  // If something is FIRED, that's the current course (use last fired)
-  const lastFired = [...lines].reverse().find((c) => c.status === "FIRED");
-  if (lastFired && typeof lastFired.idx === "number") return lastFired.idx;
-
-  // Otherwise next pending
-  const nextPending = lines.find((c) => c.status === "PENDING");
-  return nextPending && typeof nextPending.idx === "number" ? nextPending.idx : null;
-}
-
-function oldestFiredAt(setup?: { courseLines?: Array<{ status?: string; firedAt?: number }> }) {
-  const lines = setup?.courseLines ?? [];
-  const firedTimes = lines
-    .filter((c) => c.status === "FIRED" && typeof c.firedAt === "number")
-    .map((c) => c.firedAt as number);
-
-  if (firedTimes.length === 0) return null;
-  return Math.min(...firedTimes);
-}
-
-function currentFiredCourse(setup?: { courseLines?: CourseLine[] }) {
-  const lines = setup?.courseLines ?? [];
-  // pick the most recently fired course (highest firedAt)
-  const fired = lines.filter((c) => c.status === "FIRED");
-  if (fired.length === 0) return null;
-
-  return fired.reduce((best, c) => {
-    const bt = best.firedAt ?? 0;
-    const ct = c.firedAt ?? 0;
-    return ct >= bt ? c : best;
-  }, fired[0]);
-}
+type Tab = "DRAFT" | "APPROVAL" | "KDS";
 
 function firedAgeMinutes(course: CourseLine, now: number) {
   if (!course.firedAt) return 0;
@@ -105,48 +37,37 @@ function courseCountsForKitchen(course: CourseLine, pax: number) {
   return { baseCount, subLines };
 }
 
-function getLastFired(lines: CourseLine[]): CourseLine | null {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].status === "FIRED") return lines[i];
-  }
-  return null;
-}
-
-function getOnCourseIdx(lines: CourseLine[]): number | null {
-  const lastFired = getLastFired(lines);
-  if (lastFired) return lastFired.idx;
-  const nextPending = lines.find((c) => c.status === "PENDING");
-  return nextPending ? nextPending.idx : null;
-}
-
 function getNextPending(lines: CourseLine[]): CourseLine | null {
   return lines.find((c) => c.status === "PENDING") ?? null;
 }
 
-function courseCounts(course: CourseLine, pax: number) {
-  const seatSubs = course.seatSubs || {};
-
-  const substituted = Object.values(seatSubs).filter((v) => (v || "").trim().length > 0).length;
-  const baseCount = Math.max(0, pax - substituted);
-
-  const grouped: Record<string, number> = {};
-  for (const v of Object.values(seatSubs)) {
-    const txt = (v || "").trim();
-    if (!txt) continue;
-    grouped[txt] = (grouped[txt] ?? 0) + 1;
-  }
-
-  const subsGrouped = Object.entries(grouped)
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  return { baseCount, subsGrouped };
-}
-
 export default function KitchenPage() {
   const router = useRouter();
+  const { t } = useI18n();
   const { kitchenAuthed, setRole } = useRole();
-  const { tables, approveTable, setSeatSub, coursePresetSubs, markDone } = useAppState();
+  const {
+    tables,
+    reservations,
+    approveTable,
+    setSeatSub,
+    coursePresetSubs,
+    dishPresets,
+    addExtraDish,
+    removeExtraDish,
+    setChefNote,
+    insertCourseLine,
+    deleteCourseLine,
+    moveCourseLine,
+    setSeatMenu,
+    draftMoveCourse,
+    draftDeleteCourse,
+    draftInsertCourse,
+    draftSetSeatSub,
+    draftAddExtraDish,
+    draftRemoveExtraDish,
+    draftSetChefNote,
+    markDone,
+  } = useAppState();
 
   React.useEffect(() => {
     setRole("KITCHEN");
@@ -160,9 +81,21 @@ export default function KitchenPage() {
   }, []);
 
   const [tab, setTab] = React.useState<Tab>("KDS");
+  const menus = React.useMemo(() => loadSettings().menus || [], []);
   // tableId -> last acknowledged refireTotal value
   const [pauseAck, setPauseAck] = React.useState<Record<number, number>>({});
   const [activeApprovalId, setActiveApprovalId] = React.useState<number | null>(null);
+  const [activeDraftId, setActiveDraftId] = React.useState<string | null>(null);
+  const [kdsEditTableId, setKdsEditTableId] = React.useState<number | null>(null);
+  const [draftEditReservationId, setDraftEditReservationId] = React.useState<string | null>(null);
+  const reservationById = React.useMemo(() => {
+    return new Map(reservations.map((r) => [String(r.id), r]));
+  }, [reservations]);
+
+  const kdsEditTable = React.useMemo(
+    () => (kdsEditTableId ? tables.find((t) => t.id === kdsEditTableId) || null : null),
+    [kdsEditTableId, tables]
+  );
 
   const pending = React.useMemo(() => {
     return tables
@@ -196,6 +129,37 @@ export default function KitchenPage() {
       return tableNumber(a.name) - tableNumber(b.name);
     });
   }, [tables]);
+
+  const draftReservations = React.useMemo(() => {
+    return reservations.filter(
+      (r) =>
+        (r.draftStatus === "DRAFT" || r.draftStatus === "PREPPED") &&
+        !!r.draftSetup &&
+        !r.sentToApproval
+    );
+  }, [reservations]);
+
+  const activeDraft = React.useMemo(
+    () => (activeDraftId ? reservations.find((r) => r.id === activeDraftId) || null : null),
+    [activeDraftId, reservations]
+  );
+  const draftTable = React.useMemo(() => {
+    if (!activeDraft?.draftSetup) return null;
+    const previewTable: Table = {
+      id: -1,
+      name: activeDraft.tablePref || t("DRAFT", "DRAFT"),
+      pax: activeDraft.pax,
+      status: "SEATED",
+      x: 0,
+      y: 0,
+      reservationName: activeDraft.name,
+      reservationPax: activeDraft.pax,
+      reservationTime: activeDraft.time,
+      language: activeDraft.language,
+      setup: activeDraft.draftSetup,
+    };
+    return previewTable;
+  }, [activeDraft, t]);
 
   const getRefireTotal = React.useCallback((t: Table) => {
     const lines = t.setup?.courseLines ?? [];
@@ -249,15 +213,27 @@ export default function KitchenPage() {
   if (!kitchenAuthed) return null;
 
   return (
-    <div className="h-full w-full bg-zinc-950 flex flex-col">
+    <>
+      <div className="h-full w-full bg-zinc-950 flex flex-col">
       {/* TOP BAR */}
       <div className="h-14 border-b border-zinc-800 bg-black flex items-center justify-between px-6">
         <div className="flex items-center gap-3">
-          <div className="text-white font-black tracking-tight">KITCHEN</div>
-          <div className="text-xs text-zinc-500">Approval + KDS Rail</div>
+          <div className="text-white font-black tracking-tight">{t("KITCHEN", "KITCHEN")}</div>
+          <div className="text-xs text-zinc-500">{t("Approval + KDS Rail", "Approval + KDS Rail")}</div>
         </div>
 
         <div className="flex gap-2">
+          <button
+            onClick={() => setTab("DRAFT")}
+            className={[
+              "px-3 py-1.5 rounded-md text-xs font-black border transition",
+              tab === "DRAFT"
+                ? "bg-amber-500 text-black border-amber-400"
+                : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800",
+            ].join(" ")}
+          >
+            {t("DRAFT", "DRAFT")} ({draftReservations.length})
+          </button>
           <button
             onClick={() => setTab("KDS")}
             className={[
@@ -267,7 +243,7 @@ export default function KitchenPage() {
                 : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800",
             ].join(" ")}
           >
-            KDS ({approvedForKds.length})
+            {t("KDS", "KDS")} ({approvedForKds.length})
           </button>
 
           <button
@@ -279,44 +255,54 @@ export default function KitchenPage() {
                 : "bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800",
             ].join(" ")}
           >
-            APPROVAL ({pending.length})
+            {t("APPROVAL", "APPROVAL")} ({pending.length})
           </button>
 
         </div>
       </div>
 
-      {tab === "KDS" ? (
+      {tab === "DRAFT" ? (
+        <DraftRail
+          reservations={draftReservations}
+          onEditDraft={(resId) => setDraftEditReservationId(String(resId))}
+        />
+      ) : tab === "KDS" ? (
         <KdsRail
           tables={approvedForKds}
           markDone={markDone}
           now={now}
           needsPauseAttention={needsPauseAttention}
           onAcknowledgePause={acknowledgePause}
+          reservationById={reservationById}
+          onEditKdsTable={(tableId) => setKdsEditTableId(tableId)}
         />
       ) : (
-        <div className="flex flex-1 overflow-hidden">
-          {/* LEFT LIST */}
-          <aside className="w-96 border-r border-zinc-800 bg-black p-4 overflow-y-auto">
+        <div className="grid grid-cols-[320px_1fr_420px] gap-4 h-full p-4 overflow-hidden">
+          {/* LEFT: approval queue */}
+          <div className="h-full overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-black text-zinc-200">PENDING APPROVAL</div>
+              <div className="text-sm font-black text-zinc-200">{t("PENDING APPROVAL", "PENDING APPROVAL")}</div>
               <div className="text-xs text-zinc-500">{pending.length}</div>
             </div>
 
             {pending.length === 0 ? (
               <div className="text-sm text-zinc-500 border border-dashed border-zinc-800 rounded-xl p-4">
-                No tables waiting for approval.
+                {t("No tables waiting for approval.", "No tables waiting for approval.")}
               </div>
             ) : (
               <div className="space-y-2">
-                {pending.map((t) => {
-                  const isActive = t.id === activeApprovalId;
-                  const noteFlag = hasAnySeatNote(t.setup?.allergiesBySeat);
-                  const paused = !!t.setup?.paused;
+                {pending.map((table) => {
+                  const isActive = table.id === activeApprovalId;
+                  const noteFlag = hasAnySeatNote(table.setup?.allergiesBySeat);
+                  const paused = !!table.setup?.paused;
 
                   return (
                     <button
-                      key={t.id}
-                      onClick={() => setActiveApprovalId(t.id)}
+                      key={table.id}
+                      onClick={() => {
+                        setActiveApprovalId(table.id);
+                        setActiveDraftId(null);
+                      }}
                       className={[
                         "w-full text-left rounded-xl border p-3 transition",
                         isActive
@@ -326,32 +312,32 @@ export default function KitchenPage() {
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="text-white font-black text-lg">{t.name}</div>
+                          <div className="text-white font-black text-lg">{table.name}</div>
                           <div className="text-xs text-zinc-400 mt-0.5">
-                            {t.reservationName} • {t.pax} pax • {t.language}
+                            {table.reservationName} • {table.pax} {t("pax", "pax")} • {table.language}
                           </div>
                         </div>
 
                         <div className="flex flex-col items-end gap-2">
                           <span className="text-[10px] font-black px-2 py-1 rounded border border-amber-600 bg-amber-900/30 text-amber-200">
-                            PENDING
+                            {t("PENDING", "PENDING")}
                           </span>
 
-                          {t.setup?.pairing && (
+                          {table.setup?.pairing && (
                             <span className="text-[10px] font-black px-2 py-1 rounded border border-indigo-600 bg-indigo-900/25 text-indigo-200">
-                              PAIRING
+                              {t("PAIRING", "PAIRING")}
                             </span>
                           )}
 
                           {noteFlag && (
                             <span className="text-[10px] font-black px-2 py-1 rounded border border-red-600 bg-red-900/25 text-red-200">
-                              ALLERGY
+                              {t("ALLERGY", "ALLERGY")}
                             </span>
                           )}
 
                           {paused && (
                             <span className="text-[10px] font-black px-2 py-1 rounded border border-zinc-600 bg-zinc-900/40 text-zinc-200">
-                              PAUSED
+                              {t("PAUSED", "PAUSED")}
                             </span>
                           )}
                         </div>
@@ -359,7 +345,7 @@ export default function KitchenPage() {
 
                       <div className="mt-2 flex gap-2 items-center text-[10px] text-zinc-300">
                         <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900">
-                          MENU {t.setup?.menu ?? "A"}
+                          {t("MENU", "MENU")} {getMenuById(table.setup?.menuId || "")?.label || t("Menu", "Menu")}
                         </span>
                       </div>
                     </button>
@@ -367,31 +353,175 @@ export default function KitchenPage() {
                 })}
               </div>
             )}
-          </aside>
+          </div>
 
-          {/* RIGHT EDITOR */}
-          <main className="flex-1 p-6 overflow-y-auto">
-            <div className="text-2xl font-black text-white">Approval</div>
+          {/* MIDDLE: approval editor */}
+          <div className="h-full overflow-y-auto">
+            <div className="text-2xl font-black text-white">{t("Approval", "Approval")}</div>
             <div className="text-zinc-400 mt-1">
-              Seat substitutions. Seat notes are visible here and on the KDS ticket.
+              {t(
+                "Seat substitutions. Seat notes are visible here and on the KDS ticket.",
+                "Seat substitutions. Seat notes are visible here and on the KDS ticket."
+              )}
             </div>
 
             {!activeApproval || !activeApproval.setup ? (
               <div className="mt-8 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 text-zinc-500">
-                Select a pending table.
+                {t("Select a pending table.", "Select a pending table.")}
               </div>
             ) : (
               <KitchenApprovalEditor
                 table={activeApproval}
                 presets={coursePresetSubs}
+                dishPresets={dishPresets}
+                menus={menus}
+                onSetSeatMenu={setSeatMenu}
                 onSetSeatSub={setSeatSub}
+                onAddExtraDish={addExtraDish}
+                onRemoveExtraDish={removeExtraDish}
+                onSetChefNote={setChefNote}
+                onInsertChefSpecial={insertCourseLine}
+                onDeleteCourseLine={deleteCourseLine}
+                onMoveCourseLine={moveCourseLine}
                 onApprove={() => approveTable(activeApproval.id)}
               />
             )}
-          </main>
+          </div>
+
+          {/* RIGHT: live KDS preview */}
+          <div className="h-full overflow-y-auto">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-black text-zinc-200">{t("LIVE PREVIEW", "LIVE PREVIEW")}</div>
+                <div className="text-[10px] font-black text-zinc-500">{t("KDS ticket", "KDS ticket")}</div>
+              </div>
+
+              {activeDraft && draftTable ? (
+                <div className="rounded-2xl border border-zinc-800 bg-black/30 p-2">
+                  <KdsTicket
+                    table={draftTable}
+                    mode="PREVIEW"
+                    labelMode="draft"
+                    guestSubs={activeDraft.draftGuestSubs || []}
+                    guestSeatMap={activeDraft.draftGuestSeatMap || undefined}
+                  />
+                </div>
+              ) : activeApproval ? (
+                <div className="rounded-2xl border border-zinc-800 bg-black/30 p-2">
+                  <KdsTicket
+                    table={activeApproval}
+                    mode="PREVIEW"
+                    labelMode="approval"
+                    guestSeatMap={
+                      activeApproval.reservationId
+                        ? reservationById.get(String(activeApproval.reservationId))?.draftGuestSeatMap
+                        : undefined
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="text-sm text-zinc-500">
+                  {t("Select a table or draft ticket.", "Select a table or draft ticket.")}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {kdsEditTable ? (
+      <div
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4"
+        onClick={() => setKdsEditTableId(null)}
+      >
+        <div
+          className="w-full max-w-3xl max-h-[92vh] rounded-2xl border border-zinc-800 bg-[#0f0f12] overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#0f0f12] z-10">
+            <div className="text-sm font-black text-white">
+              {t("KDS EDIT", "KDS EDIT")} — {kdsEditTable.name}
+            </div>
+            <button
+              onClick={() => setKdsEditTableId(null)}
+              className="px-3 py-2 rounded-xl text-xs font-black border border-zinc-800 bg-black/35 text-zinc-200 hover:bg-zinc-900/40"
+            >
+              {t("DONE", "DONE")}
+            </button>
+          </div>
+
+          <div className="p-4 overflow-y-auto min-h-0">
+            <TicketEditor
+              pax={kdsEditTable.pax}
+              setup={kdsEditTable.setup!}
+              presets={coursePresetSubs}
+              dishPresets={dishPresets}
+              menus={menus}
+              onSetSeatMenu={(seat, menuId) => setSeatMenu(kdsEditTable.id, seat, menuId)}
+              onSetSeatSub={(courseId, seat, sub) => setSeatSub(kdsEditTable.id, courseId, seat, sub)}
+              onAddExtraDish={(courseId, dishName) => addExtraDish(kdsEditTable.id, courseId, dishName)}
+              onRemoveExtraDish={(courseId, index) => removeExtraDish(kdsEditTable.id, courseId, index)}
+              onSetChefNote={(note) => setChefNote(kdsEditTable.id, note)}
+              onInsertCourseLine={(anchorCourseId, where, name) =>
+                insertCourseLine(kdsEditTable.id, anchorCourseId, where, name)
+              }
+              onDeleteCourseLine={(courseId) => deleteCourseLine(kdsEditTable.id, courseId)}
+              onMoveCourseLine={(courseId, dir) => moveCourseLine(kdsEditTable.id, courseId, dir)}
+            />
+          </div>
+        </div>
+      </div>
+      ) : null}
+
+      {draftEditReservationId ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center p-4"
+          onClick={() => setDraftEditReservationId(null)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[92vh] rounded-2xl border border-zinc-800 bg-[#0f0f12] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-[#0f0f12] z-10">
+              <div className="text-sm font-black text-white">
+                {t("DRAFT", "DRAFT")} {t("EDIT", "EDIT")}
+              </div>
+              <button
+                onClick={() => setDraftEditReservationId(null)}
+                className="px-3 py-2 rounded-xl text-xs font-black border border-zinc-800 bg-black/35 text-zinc-200 hover:bg-zinc-900/40"
+              >
+                {t("DONE", "DONE")}
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto min-h-0">
+              {(() => {
+                const r = reservations.find((x) => String(x.id) === String(draftEditReservationId));
+                if (!r?.draftSetup) {
+                  return <div className="text-sm text-zinc-500">{t("No draft tickets.", "No draft tickets.")}</div>;
+                }
+                return (
+                  <TicketEditor
+                    pax={r.pax}
+                    setup={r.draftSetup}
+                    presets={coursePresetSubs}
+                    dishPresets={dishPresets}
+                    onSetSeatSub={(courseId, seat, sub) => draftSetSeatSub(r.id, courseId, seat, sub)}
+                    onAddExtraDish={(courseId, dishName) => draftAddExtraDish(r.id, courseId, dishName)}
+                    onRemoveExtraDish={(courseId, index) => draftRemoveExtraDish(r.id, courseId, index)}
+                    onSetChefNote={(note) => draftSetChefNote(r.id, note)}
+                    onInsertCourseLine={(anchorCourseId, where, name) => draftInsertCourse(r.id, anchorCourseId, where, name)}
+                    onDeleteCourseLine={(courseId) => draftDeleteCourse(r.id, courseId)}
+                    onMoveCourseLine={(courseId, dir) => draftMoveCourse(r.id, courseId, dir)}
+                  />
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -403,13 +533,18 @@ function KdsRail({
   now,
   needsPauseAttention,
   onAcknowledgePause,
+  reservationById,
+  onEditKdsTable,
 }: {
   tables: Table[];
   markDone: (tableId: number, courseId: string) => void;
   now: number;
   needsPauseAttention: (t: Table) => boolean;
   onAcknowledgePause: (t: Table) => void;
+  reservationById: Map<string, Reservation>;
+  onEditKdsTable: (tableId: number) => void;
 }) {
+  const { t } = useI18n();
   const ticketRefs = React.useRef<Record<number, HTMLDivElement | null>>({});
 
   const attention = React.useMemo(() => {
@@ -432,344 +567,143 @@ function KdsRail({
     <div className="flex-1 overflow-hidden bg-zinc-900">
       {/* Header */}
       <div className="h-12 border-b border-zinc-800 bg-zinc-950 flex items-center px-6">
-        <div className="text-sm font-black text-white">KDS RAIL</div>
+        <div className="text-sm font-black text-white">{t("KDS RAIL", "KDS RAIL")}</div>
         <div className="ml-3 text-xs text-zinc-400">
-          White tickets • full menu • pairing/allergy/paused on top • fired time + refire count
+          {t(
+            "White tickets • full menu • pairing/allergy/paused on top • fired time + refire count",
+            "White tickets • full menu • pairing/allergy/paused on top • fired time + refire count"
+          )}
         </div>
       </div>
 
       {/* ACTION RAIL */}
       <div className="border-b border-zinc-800 bg-black px-6 py-3">
-        <div className="text-[11px] font-black text-zinc-300 tracking-widest">ACTION RAIL</div>
+        <div className="text-[11px] font-black text-zinc-300 tracking-widest">{t("ACTION RAIL", "ACTION RAIL")}</div>
 
         {attention.length === 0 ? (
-          <div className="mt-2 text-xs text-zinc-500">No paused tables need attention.</div>
+          <div className="mt-2 text-xs text-zinc-500">
+            {t("No paused tables need attention.", "No paused tables need attention.")}
+          </div>
         ) : (
           <div className="mt-2 flex gap-2 flex-wrap">
-            {attention.map((t) => (
+          {attention.map((table) => (
               <button
-                key={t.id}
+                key={table.id}
                 onClick={() => {
                   // jump to ticket
-                  const el = ticketRefs.current[t.id];
+                  const el = ticketRefs.current[table.id];
                   if (el) el.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
                 }}
                 className="px-3 py-2 rounded-xl border border-zinc-700 bg-zinc-900/50 text-zinc-100 text-xs font-black"
               >
-                {t.name} • PAUSED
+                {table.name} • {t("PAUSED", "PAUSED")}
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {/* Tickets (horizontal + vertical scroll) */}
-      <div className="h-[calc(100%-48px-72px)] overflow-x-auto overflow-y-auto whitespace-nowrap p-6">
-        {sorted.length === 0 ? (
-          <div className="text-zinc-500 border border-dashed border-zinc-700 rounded-2xl p-6 bg-black/30 inline-block">
-            No approved tables yet.
-          </div>
-        ) : (
-          sorted.map((t) => (
-            <div
-              key={t.id}
-              ref={(node) => {
-                ticketRefs.current[t.id] = node;
-              }}
-              className="inline-block align-top mr-6"
-            >
-              <KdsTicket
-                table={t}
-                markDone={markDone}
-                now={now}
-                pauseNeedsAttention={needsPauseAttention(t)}
-                onAcknowledgePause={() => onAcknowledgePause(t)}
-              />
+      {/* Tickets (horizontal rail) */}
+      <div className="h-full overflow-x-auto overflow-y-hidden">
+        <div className="flex gap-4 p-4 min-w-max">
+          {sorted.length === 0 ? (
+            <div className="text-zinc-500 border border-dashed border-zinc-700 rounded-2xl p-6 bg-black/30">
+              {t("No approved tables yet.", "No approved tables yet.")}
             </div>
-          ))
-        )}
+          ) : (
+            sorted.map((table) => (
+              <div
+                key={table.id}
+                ref={(node) => {
+                  ticketRefs.current[table.id] = node;
+                }}
+                className="w-[360px] shrink-0"
+              >
+                <div className="mb-2 text-xs font-black text-zinc-300">{t("KDS TICKET", "KDS TICKET")}</div>
+                <KdsTicket
+                  table={table}
+                  markDone={markDone}
+                  now={now}
+                  pauseNeedsAttention={needsPauseAttention(table)}
+                  onAcknowledgePause={() => onAcknowledgePause(table)}
+                  mode="KDS"
+                  editMode={false}
+                  onToggleEdit={() => onEditKdsTable(table.id)}
+                  labelMode="approval"
+                  guestSeatMap={
+                    table.reservationId
+                      ? reservationById.get(String(table.reservationId))?.draftGuestSeatMap
+                      : undefined
+                  }
+                />
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function KdsTicket({
-  table,
-  markDone,
-  now,
-  pauseNeedsAttention,
-  onAcknowledgePause,
+/** ===================== DRAFT RAIL UI ===================== */
+
+function DraftRail({
+  reservations,
+  onEditDraft,
 }: {
-  table: Table;
-  markDone: (tableId: number, courseId: string) => void;
-  now: number;
-  pauseNeedsAttention: boolean;
-  onAcknowledgePause: () => void;
+  reservations: Reservation[];
+  onEditDraft: (resId: string | number) => void;
 }) {
-  const setup = table.setup!;
-  const notes = seatNotesList(setup.allergiesBySeat);
-  const allergyFlag = notes.length > 0;
-  const isPaused = !!setup.paused;
-  const refireTotal = totalRefires(setup);
-  const bodyRef = React.useRef<HTMLDivElement | null>(null);
-  const firstFiredRef = React.useRef<HTMLDivElement | null>(null);
-  const firstFired = setup.courseLines.find((c) => c.status === "FIRED") || null;
-  const firedOldest = oldestFiredAt(setup);
-  const firedMins = firedOldest ? Math.max(0, Math.floor((now - firedOldest) / 60000)) : null;
-  const firedN = firedCount(setup);
-  const doneN = doneCount(setup);
-  const totalN = totalCourses(setup);
-  const onCourse = onCourseIdx(setup);
-
-  React.useEffect(() => {
-    if (!firstFired) return;
-    // scroll the ticket body to the first fired row
-    if (firstFiredRef.current && bodyRef.current) {
-      firstFiredRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  }, [firstFired?.id, firstFired?.firedAt]);
-
-  const lines = setup.courseLines;
-  const onCourseIdxLocal = getOnCourseIdx(lines);
-  const nextPending = getNextPending(lines);
-  const lastFired = getLastFired(lines);
-
-  const lastFiredMins =
-    lastFired?.firedAt ? Math.max(0, Math.floor((now - lastFired.firedAt) / 60000)) : null;
-
-  const firedCountLocal = lines.filter((c) => c.status === "FIRED").length;
+  const { t } = useI18n();
+  const draftTables = React.useMemo(() => {
+    return reservations
+      .filter((r) => r.draftSetup)
+      .map((r) => ({
+        id: -1,
+        name: r.tablePref || t("DRAFT", "DRAFT"),
+        pax: r.pax,
+        status: "SEATED",
+        x: 0,
+        y: 0,
+        reservationName: r.name,
+        reservationPax: r.pax,
+        reservationTime: r.time,
+        language: r.language,
+        setup: r.draftSetup,
+        reservationId: r.id,
+      })) as Table[];
+  }, [reservations, t]);
 
   return (
-      <div className="w-[360px] h-[calc(100vh-220px)] bg-white text-black rounded-sm shadow-2xl border border-zinc-300 overflow-hidden font-mono flex flex-col">
-        {/* Top tear edge */}
-        <div
-          className="h-2 bg-zinc-200"
-          style={{
-            clipPath:
-              "polygon(0% 100%, 4% 0%, 8% 100%, 12% 0%, 16% 100%, 20% 0%, 24% 100%, 28% 0%, 32% 100%, 36% 0%, 40% 100%, 44% 0%, 48% 100%, 52% 0%, 56% 100%, 60% 0%, 64% 100%, 68% 0%, 72% 100%, 76% 0%, 80% 100%, 84% 0%, 88% 100%, 92% 0%, 96% 100%, 100% 0%)",
-          }}
-        />
+    <div className="flex-1 overflow-hidden bg-zinc-900">
+      <div className="h-12 border-b border-zinc-800 bg-zinc-950 flex items-center px-6">
+        <div className="text-sm font-black text-white">{t("DRAFT TICKETS", "DRAFT TICKETS")}</div>
+        <div className="ml-3 text-xs text-zinc-400">{draftTables.length}</div>
+      </div>
 
-        {/* HEADER (sticky) */}
-        <div className="p-4 border-b border-zinc-300 sticky top-0 bg-white z-20">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-3xl font-black tracking-tight">{table.name}</div>
-              <div className="text-xs mt-1 text-zinc-700">
-                {table.pax} PAX • {table.reservationName || "—"} • {table.language || "—"}
-              </div>
-
-              <div className="mt-2 text-[11px] text-zinc-800">
-                <span className="font-black">ON:</span> {onCourseIdxLocal !== null ? `#${onCourseIdxLocal}` : "—"}
-                {nextPending ? <span className="text-zinc-600"> • Next: #{nextPending.idx}</span> : null}
-              </div>
-
-              <div className="mt-1 text-[11px] text-zinc-800">
-                <span className="font-black">FIRED:</span> {firedCountLocal > 0 ? `${firedCountLocal} active` : "none"}
-                {lastFiredMins !== null ? <span className="text-zinc-600"> • Last: {lastFiredMins}m</span> : null}
-                {refireTotal > 0 ? <span className="text-zinc-600"> • Refire: {refireTotal}</span> : null}
-              </div>
-
-              <div className="text-[10px] mt-1 text-zinc-700 font-black tracking-widest">
-                {onCourse !== null ? `ON COURSE #${onCourse}` : "ON COURSE —"}
-                {firedMins !== null ? ` • FIRED ${firedMins}m` : " • FIRED —"}
-                {` • FIRED ${firedN} • DONE ${doneN}/${totalN}`}
-              </div>
+      <div className="h-full overflow-x-auto overflow-y-hidden">
+        <div className="flex gap-4 p-4 min-w-max">
+          {draftTables.length === 0 ? (
+            <div className="text-zinc-500 border border-dashed border-zinc-700 rounded-2xl p-6 bg-black/30">
+              {t("No draft tickets.", "No draft tickets.")}
             </div>
-
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              <span className="text-[10px] font-black px-2 py-1 border border-zinc-400 bg-zinc-50 text-zinc-800">
-                MENU {setup.menu}
-              </span>
-
-              {setup.pairing && (
-                <span className="text-[10px] font-black px-2 py-1 border border-indigo-600 bg-indigo-50 text-indigo-800">
-                  PAIRING
-                </span>
-              )}
-              {allergyFlag && (
-                <span className="text-[10px] font-black px-2 py-1 border border-red-600 bg-red-50 text-red-700">
-                  ALLERGY
-                </span>
-              )}
-              {isPaused && (
-                <button
-                  type="button"
-                  onClick={onAcknowledgePause}
-                  className={[
-                    "text-[10px] font-black px-2 py-1 border border-zinc-500 bg-zinc-100 text-zinc-700",
-                    pauseNeedsAttention ? "animate-pulse" : "",
-                  ].join(" ")}
-                  title={pauseNeedsAttention ? "Tap to acknowledge pause" : "Pause acknowledged"}
-                >
-                  PAUSED
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* BODY (scrolls) */}
-        <div ref={bodyRef} className="p-3 max-h-[560px] overflow-y-auto">
-          {/* ✅ Seat notes ALWAYS expanded now */}
-          {notes.length > 0 && (
-            <div className="mb-3 border border-zinc-300 bg-zinc-50 p-2 sticky top-0 z-10">
-              <div className="text-[10px] font-black tracking-widest text-zinc-700 mb-1">SEAT NOTES</div>
-              <div className="text-[11px] text-zinc-800 space-y-1">
-                {notes.map((x) => (
-                  <div key={x.seat}>
-                    <span className="font-black">S{x.seat}:</span> {x.text}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="text-[10px] font-black tracking-widest text-zinc-600 mb-2">FULL COURSE LIST</div>
-
-          <div className="space-y-1">
-            {setup.courseLines.map((c) => {
-              const isFirstFired = firstFired?.id === c.id;
+          ) : (
+            draftTables.map((table) => {
+              const resId = table.reservationId as string;
               return (
-                <div
-                  key={c.id}
-                  ref={isFirstFired ? firstFiredRef : undefined}
-                  className={isFirstFired ? "rounded-sm ring-2 ring-orange-300/60 bg-orange-50/40" : ""}
-                >
-                  <CourseLineRow
-                    course={c}
-                    onDone={() => markDone(table.id, c.id)}
-                    now={now}
-                    nextPendingId={nextPending?.id ?? null}
-                    pax={table.pax}
+                <div key={resId} className="w-[360px] shrink-0">
+                  <div className="mb-2 text-xs font-black text-zinc-300">{t("KDS TICKET", "KDS TICKET")}</div>
+                  <KdsTicket
+                    table={table}
+                    mode="PREVIEW"
+                    editMode={false}
+                    onToggleEdit={() => onEditDraft(resId)}
+                    labelMode="draft"
                   />
                 </div>
               );
-            })}
-          </div>
-        </div>
-
-        {/* Bottom tear edge */}
-        <div
-          className="h-2 bg-white border-t border-zinc-200"
-          style={{
-            clipPath:
-              "polygon(0% 0%, 4% 100%, 8% 0%, 12% 100%, 16% 0%, 20% 100%, 24% 0%, 28% 100%, 32% 0%, 36% 100%, 40% 0%, 44% 100%, 48% 0%, 52% 100%, 56% 0%, 60% 100%, 64% 0%, 68% 100%, 72% 0%, 76% 100%, 80% 0%, 84% 100%, 88% 0%, 92% 100%, 96% 0%, 100% 100%)",
-          }}
-        />
-      </div>
-  );
-}
-
-function CourseLineRow({
-  course,
-  onDone,
-  now,
-  nextPendingId,
-  pax,
-}: {
-  course: CourseLine;
-  onDone: () => void;
-  now: number;
-  nextPendingId: string | null;
-  pax: number;
-}) {
-  const fired = course.status === "FIRED";
-  const done = course.status === "DONE";
-  const isNext = course.status === "PENDING" && nextPendingId === course.id;
-
-  const firedMins =
-    fired && course.firedAt ? Math.max(0, Math.floor((now - course.firedAt) / 60000)) : null;
-
-  const refires = course.refireCount ?? 0;
-
-  const { baseCount, subsGrouped } = courseCounts(course, pax);
-  const subs = Object.entries(course.seatSubs || {})
-    .map(([seat, sub]) => ({ seat: Number(seat), text: (sub || "").trim() }))
-    .filter((x) => x.text.length > 0)
-    .sort((a, b) => a.seat - b.seat);
-
-  return (
-    <div
-      className={[
-        "py-1 px-2 -mx-2 rounded",
-        fired ? "bg-orange-50 border border-orange-200" : "",
-        isNext ? "border border-zinc-400 bg-zinc-50" : "",
-        done ? "opacity-40" : course.status === "PENDING" ? "opacity-85" : "",
-      ].join(" ")}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <div className="text-xs font-black w-8 text-right">{course.idx}.</div>
-
-            <div className={["text-sm font-bold truncate", done ? "line-through text-zinc-500" : ""].join(" ")}>
-              {course.name} <span className="font-black">{baseCount}x</span>
-            </div>
-
-            {fired && (
-              <span className="text-[10px] font-black px-2 py-0.5 border border-orange-600 bg-white text-orange-800">
-                FIRED
-              </span>
-            )}
-            {isNext && (
-              <span className="text-[10px] font-black px-2 py-0.5 border border-zinc-500 bg-white text-zinc-700">
-                NEXT
-              </span>
-            )}
-            {done && (
-              <span className="text-[10px] font-black px-2 py-0.5 border border-green-700 bg-white text-green-800">
-                DONE
-              </span>
-            )}
-
-            {fired && firedMins !== null && (
-              <span className="text-[10px] font-black px-2 py-0.5 border border-zinc-400 bg-white text-zinc-700">
-                {firedMins}m
-              </span>
-            )}
-
-            {fired && refires > 0 && (
-              <span className="text-[10px] font-black px-2 py-0.5 border border-orange-600 bg-white text-orange-800">
-                REFIRE x{refires}
-              </span>
-            )}
-          </div>
-
-          {subsGrouped.length > 0 && (
-            <div className="mt-1 text-[11px] text-zinc-800 space-y-0.5">
-              {subsGrouped.map((s) => (
-                <div key={s.name}>
-                  {s.name} <span className="font-black">{s.count}x</span>
-                </div>
-              ))}
-            </div>
+            })
           )}
-
-          {subs.length > 0 && (
-            <div className="mt-1 text-[11px] text-zinc-700 space-y-0.5">
-              {subs.map((s) => (
-                <div key={s.seat} className={done ? "line-through text-zinc-500" : ""}>
-                  <span className="font-black">S{s.seat}:</span> {s.text}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="shrink-0">
-          <button
-            disabled={!fired}
-            onClick={onDone}
-            className={[
-              "text-[10px] font-black px-3 py-1 border transition",
-              fired
-                ? "border-green-700 bg-green-50 hover:bg-green-100"
-                : "border-zinc-300 bg-zinc-100 text-zinc-400 cursor-not-allowed",
-            ].join(" ")}
-          >
-            DONE
-          </button>
         </div>
       </div>
     </div>
@@ -781,21 +715,41 @@ function CourseLineRow({
 function KitchenApprovalEditor({
   table,
   presets,
+  dishPresets,
+  menus,
+  onSetSeatMenu,
   onSetSeatSub,
+  onAddExtraDish,
+  onRemoveExtraDish,
+  onSetChefNote,
+  onInsertChefSpecial,
+  onDeleteCourseLine,
+  onMoveCourseLine,
   onApprove,
 }: {
   table: Table;
   presets: string[];
+  dishPresets: string[];
+  menus: Array<{ id: string; label: string }>;
+  onSetSeatMenu: (tableId: number, seat: number, menuId: string) => void;
   onSetSeatSub: (tableId: number, courseId: string, seat: number, sub: string) => void;
+  onAddExtraDish: (tableId: number, courseId: string, dishName: string) => void;
+  onRemoveExtraDish: (tableId: number, courseId: string, index: number) => void;
+  onSetChefNote: (tableId: number, note: string) => void;
+  onInsertChefSpecial: (
+    tableId: number,
+    anchorCourseId: string,
+    where: "BEFORE" | "AFTER",
+    name: string
+  ) => void;
+  onDeleteCourseLine: (tableId: number, courseId: string) => void;
+  onMoveCourseLine: (tableId: number, courseId: string, dir: -1 | 1) => void;
   onApprove: () => void;
 }) {
+  const { t } = useI18n();
   const setup = table.setup!;
   const noteFlag = hasAnySeatNote(setup.allergiesBySeat);
   const paused = !!setup.paused;
-
-  const [expandedCourseId, setExpandedCourseId] = React.useState<string | null>(null);
-
-  const notes = seatNotesList(setup.allergiesBySeat);
 
   return (
     <div className="mt-6 space-y-4">
@@ -804,117 +758,61 @@ function KitchenApprovalEditor({
           <span className="px-3 py-1 rounded border border-zinc-700 bg-zinc-950 text-sm font-black text-zinc-200">
             {table.name}
           </span>
+          {table.tableLanguage ? (
+            <div className="ml-2 px-2 py-1 rounded-lg border border-zinc-800 bg-black/40 text-[10px] font-black text-zinc-200">
+              {table.tableLanguage}
+            </div>
+          ) : null}
 
           <span className="px-3 py-1 rounded border border-zinc-700 bg-zinc-950 text-sm font-black text-zinc-200">
-            MENU {setup.menu}
+            {t("MENU", "MENU")} {getMenuById(setup.menuId)?.label || t("Menu", "Menu")}
           </span>
 
           {setup.pairing && (
             <span className="px-3 py-1 rounded border border-indigo-600 bg-indigo-900/25 text-sm font-black text-indigo-200">
-              PAIRING
+              {t("PAIRING", "PAIRING")}
             </span>
           )}
 
           {noteFlag && (
             <span className="px-3 py-1 rounded border border-red-600 bg-red-900/25 text-sm font-black text-red-200">
-              ALLERGY
+              {t("ALLERGY", "ALLERGY")}
             </span>
           )}
 
           {paused && (
             <span className="px-3 py-1 rounded border border-zinc-600 bg-zinc-950 text-sm font-black text-zinc-200">
-              PAUSED
+              {t("PAUSED", "PAUSED")}
             </span>
           )}
 
           <span className="px-3 py-1 rounded border border-amber-600 bg-amber-900/30 text-sm font-black text-amber-200">
-            PENDING
+            {t("PENDING", "PENDING")}
           </span>
         </div>
-
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-black p-4">
-          <div className="text-xs font-black text-zinc-200 mb-2">SEAT NOTES (ALLERGY / PREF)</div>
-          {notes.length === 0 ? (
-            <div className="text-sm text-zinc-500">—</div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: table.pax }).map((_, idx) => {
-                const seat = idx + 1;
-                const val = (setup.allergiesBySeat?.[seat] ?? "").trim();
-                return (
-                  <div key={seat} className="rounded-lg border border-zinc-800 bg-zinc-950 p-3">
-                    <div className="text-[11px] font-black text-zinc-300 mb-1">Seat {seat}</div>
-                    <div className={val ? "text-sm text-white font-black" : "text-sm text-zinc-500"}>
-                      {val || "—"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950 flex items-center justify-between">
-          <div className="text-sm font-black text-white">SUBSTITUTIONS PER SEAT</div>
-          <div className="text-xs text-zinc-500">Tap a course → choose substitute per seat</div>
-        </div>
-
-        <div className="divide-y divide-zinc-800">
-          {setup.courseLines.map((c) => (
-            <div key={c.id} className="p-4">
-              <button
-                onClick={() => setExpandedCourseId((prev) => (prev === c.id ? null : c.id))}
-                className="w-full text-left flex items-start justify-between gap-3"
-              >
-                <div>
-                  <div className="text-white font-black">
-                    {c.idx}. {c.name}
-                  </div>
-                  <div className="text-xs text-zinc-500 mt-1">
-                    {Object.values(c.seatSubs || {}).some((v) => (v || "").trim().length > 0)
-                      ? "Substitutions set"
-                      : "No substitutions"}
-                  </div>
-                </div>
-
-                <div className="text-xs font-black text-zinc-300">{expandedCourseId === c.id ? "CLOSE" : "EDIT"}</div>
-              </button>
-
-              {expandedCourseId === c.id && (
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {Array.from({ length: table.pax }).map((_, idx) => {
-                    const seat = idx + 1;
-                    const current = c.seatSubs?.[seat] ?? "";
-                    return (
-                      <div key={seat} className="rounded-xl border border-zinc-800 bg-black p-3">
-                        <div className="text-[11px] font-black text-zinc-300 mb-2">Seat {seat}</div>
-                        <select
-                          value={current}
-                          onChange={(e) => onSetSeatSub(table.id, c.id, seat, e.target.value)}
-                          className="w-full rounded-lg bg-zinc-950 border border-zinc-800 text-white px-3 py-2 text-sm outline-none focus:border-amber-500"
-                        >
-                          <option value="">— No substitution —</option>
-                          {presets.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <TicketEditor
+        pax={table.pax}
+        setup={setup}
+        presets={presets}
+        dishPresets={dishPresets}
+        menus={menus}
+        onSetSeatMenu={(seat, menuId) => onSetSeatMenu(table.id, seat, menuId)}
+        onSetSeatSub={(courseId, seat, sub) => onSetSeatSub(table.id, courseId, seat, sub)}
+        onAddExtraDish={(courseId, dishName) => onAddExtraDish(table.id, courseId, dishName)}
+        onRemoveExtraDish={(courseId, index) => onRemoveExtraDish(table.id, courseId, index)}
+        onSetChefNote={(note) => onSetChefNote(table.id, note)}
+        onInsertCourseLine={(anchorCourseId, where, name) =>
+          onInsertChefSpecial(table.id, anchorCourseId, where, name)
+        }
+        onDeleteCourseLine={(courseId) => onDeleteCourseLine(table.id, courseId)}
+        onMoveCourseLine={(courseId, dir) => onMoveCourseLine(table.id, courseId, dir)}
+      />
 
       <div className="flex items-center justify-end">
         <button onClick={onApprove} className="px-6 py-4 rounded-2xl bg-green-600 hover:bg-green-500 text-black font-black">
-          APPROVE TABLE
+          {t("APPROVE TABLE", "APPROVE TABLE")}
         </button>
       </div>
     </div>
